@@ -4,7 +4,7 @@
 
 ### 1. Install Dependencies
 ```bash
-cd Ambient-AI-Solution
+cd CCP-Solution-Accelerator
 pip install -r requirements.txt
 ```
 
@@ -108,7 +108,7 @@ pip install flask requests
 ```
 
 **Can't find templates?**
-- Make sure you're running from the Ambient-AI-Solution directory
+- Make sure you're running from the CCP-Solution-Accelerator directory
 
 ## Features
 
