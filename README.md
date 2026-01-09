@@ -127,8 +127,6 @@ Extract entities from SOAP note using IMO Entity Extraction API.
 - **Input**: `{ "soap_note": {...} }`
 - **Output**: `{ "entities": {...}, "entity_counts": {...}, "success": true }`
 
-### Note: Normalization & Refinement removed
-The normalization and clinician-driven refinement steps have been removed from this version of the pipeline. The API endpoints `/normalize_entities` and `/refine_entities` are intentionally disabled and will return HTTP 410 (Gone).
 
 ### GET /load_sample_transcript
 Load a sample medical transcript for testing.
@@ -150,9 +148,6 @@ When configured with valid API credentials, the application integrates with:
    - URL: `https://api.imohealth.com/entityextraction/pipelines/imo-clinical-comprehensive`
    - Extracts medical entities from clinical text
 
-2. **IMO Precision Normalize API**
-   - URL: `https://api.imohealth.com/precision-normalize/v1`
-   - Normalizes entities to IMO terminology
 
 ## Usage
 
@@ -165,7 +160,7 @@ When configured with valid API credentials, the application integrates with:
 - **Backend**: Flask (Python)
 - **Frontend**: HTML, CSS, JavaScript
 - **AI Model**: Amazon Bedrock Nova Pro (for SOAP note generation)
-- **APIs**: IMO Health Entity Extraction & Precision Normalize
+- **APIs**: IMO Health Entity Extraction
 - **NLP**: Medical entity recognition and normalization
 - **Cloud**: AWS Bedrock
 
