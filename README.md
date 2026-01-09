@@ -23,15 +23,23 @@ The application implements a 3-step pipeline:
 
 1. Navigate to the project directory:
 ```bash
-cd Ambient-AI-Solution
+cd CCP-Solution-Accelerator
 ```
 
-2. Install required packages:
+2. Create and activate a virtual environment (recommended):
+```bash
+python3 -m venv .venv
+source .venv/bin/activate  # On macOS/Linux
+# or
+.venv\Scripts\activate  # On Windows
+```
+
+3. Install required packages:
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Configure AWS credentials (choose one method):
+4. Configure AWS credentials (choose one method):
 
    **Option A: AWS CLI**
    ```bash
@@ -52,25 +60,35 @@ pip install -r requirements.txt
    aws_region = "us-east-1"
    ```
 
-4. Enable Bedrock Nova Pro model in your AWS account:
+5. Enable Bedrock Nova Pro model in your AWS account:
    - Go to AWS Bedrock Console
    - Navigate to Model Access
    - Request access to "Amazon Nova Pro" model
    - Wait for approval (usually instant)
 
-5. Configure IMO API credentials (optional):
-   - Open `config.py`
-   - Add your IMO Health API credentials
-   - Set `demo_mode = False` to use live APIs
+6. (Optional) Configure IMO API credentials in `config.py`:
+   ```python
+   imo_client_id = "your_client_id"
+   imo_client_secret = "your_client_secret"
+   demo_mode = False  # Set to False to use live IMO APIs
+   ```
+   *Note: The app works in demo mode without IMO credentials*
 
 ### Running the Application
 
-1. Start the Flask server:
+**Option A: Using Python directly**
 ```bash
 python app.py
 ```
 
-2. Open your browser and navigate to:
+**Option B: Using the provided scripts**
+```bash
+./run.sh          # On macOS/Linux
+# or
+run.bat           # On Windows
+```
+
+Open your browser and navigate to:
 ```
 http://localhost:5001
 ```
@@ -78,16 +96,23 @@ http://localhost:5001
 ## Project Structure
 
 ```
-Ambient-AI-Solution/
+CCP-Solution-Accelerator/
 ├── app.py                      # Flask backend with API endpoints
 ├── soap_generator.py           # SOAP note generation module
 ├── nlp_processor.py           # IMO API integration for NLP
 ├── config.py                  # Configuration and API credentials
+├── requirements.txt           # Python dependencies
+├── run.sh                     # Shell script to run the app (Unix/macOS)
+├── run.bat                    # Batch script to run the app (Windows)
 ├── templates/
 │   └── index.html            # Frontend UI
-├── static/                    # Static files (CSS, JS, images)
-└── sample_data/
-    └── sample_transcript.txt  # Sample medical transcript
+├── sample_data/               # Sample medical transcripts
+│   ├── sample_transcript.txt
+│   ├── inpatient-transcript3.txt
+│   ├── outpatient-transcript1.txt
+│   └── outpatient-transcript2.txt
+├── README.md                  # This file
+└── QUICKSTART.md             # Quick start guide
 ```
 
 ## API Endpoints
@@ -133,9 +158,7 @@ When configured with valid API credentials, the application integrates with:
 
 1. **Enter Transcript**: Paste a medical transcript or click "Load Sample Transcript"
 2. **Generate SOAP**: Click "Generate SOAP Note" to structure the transcript
-3. **Extract Entities**: Click "Extract Entities" to identify medical concepts
-4. **Normalize**: Click "Normalize with IMO" to standardize entity codes
-5. **Refine**: If entities need refinement, click "Refine Entities" to add specificity
+3. **Extract Entities**: Click "Extract Entities" to identify medical concepts (problems, procedures, medications, labs)
 
 ## Technologies Used
 
