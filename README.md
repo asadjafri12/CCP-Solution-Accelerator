@@ -1,6 +1,6 @@
 # Clinical Comprehensive Pipeline (CCP) Accelerator
 
-A web-based application that showcases the IMO Clinical Comprehensive Pipeline. This is done by processing medical transcripts into structured clinical data using Amazon Bedrock Nova Pro and the IMO Health Entity Extraction API.
+A web-based application that showcases the IMO Clinical Comprehensive Pipeline. This is done by processing SOAP notes into structured clinical data with hyper-specific medical codes using the IMO Health Entity Extraction API.
 
 ## Features
 
@@ -8,7 +8,7 @@ The application implements a 3-step pipeline:
 
 1. **Transcript Input** - Enter or upload medical transcripts from ambient listening software
 2. **SOAP Note Generation** - Uses Amazon Bedrock Nova Pro AI model to convert transcripts into structured SOAP format (Subjective, Objective, Assessment, Plan)
-3. **Entity Extraction** - Extracts medical entities (problems, procedures, medications, labs) from Assessment and Plan sections using the IMO Entity Extraction API
+3. **Entity Extraction** - Extracts medical entities (problems, procedures, medications, labs) from Assessment and Plan sections using the IMO Entity Extraction API and adds the relevant medical codes, such as ICD-10, LOINC, SNOMED, and RxNorm.
 
 ## Setup
 
