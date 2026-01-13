@@ -19,12 +19,18 @@ class SOAPGenerator:
         try:
             # Initialize Bedrock Runtime client
             if config.aws_access_key_id and config.aws_secret_access_key:
-                self.bedrock_client = boto3.client(
-                    service_name='bedrock-runtime',
-                    region_name=config.aws_region,
-                    aws_access_key_id=config.aws_access_key_id,
-                    aws_secret_access_key=config.aws_secret_access_key
-                )
+                # Build kwargs for boto3 client
+                kwargs = {
+                    'service_name': 'bedrock-runtime',
+                    'region_name': config.aws_region,
+                    'aws_access_key_id': config.aws_access_key_id,
+                    'aws_secret_access_key': config.aws_secret_access_key
+                }
+                # Add session token if available (for temporary credentials)
+                if config.aws_session_token:
+                    kwargs['aws_session_token'] = config.aws_session_token
+                
+                self.bedrock_client = boto3.client(**kwargs)
             else:
                 # Use default AWS credentials (from ~/.aws/credentials or IAM role)
                 self.bedrock_client = boto3.client(

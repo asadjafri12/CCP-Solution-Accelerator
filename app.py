@@ -26,57 +26,8 @@ def index():
     """
     print(f"\n{'='*80}")
     print("RENDERING INDEX PAGE")
-    print(f"{'='*80}")
-    print(f"show_normalization_step config value: {config.show_normalization_step}")
     print(f"{'='*80}\n")
-    return render_template('index.html', show_normalization_step=config.show_normalization_step)
-
-@app.route('/generate_soap', methods=['POST'])
-def generate_soap():
-    """
-    Generate a SOAP note from medical transcript.
-    
-    Endpoint: POST /generate_soap
-    Input: { "transcript": "medical transcript text..." }
-    Output: { "soap_note": {...}, "success": true }
-    """
-    try:
-        data = request.get_json()
-        transcript = data.get('transcript', '')
-        
-        if not transcript or len(transcript.strip()) == 0:
-            return jsonify({
-                "success": False,
-                "error": "Transcript is required"
-            }), 400
-        
-        print(f"\n{'='*80}")
-        print("GENERATING SOAP NOTE")
-        print(f"{'='*80}\n")
-        print(f"Transcript length: {len(transcript)} characters")
-        
-        # Store transcript in pipeline state
-        PIPELINE_STATE['transcript'] = transcript
-        
-        # Generate SOAP note
-        soap_note = soap_generator.generate_soap_note(transcript)
-        PIPELINE_STATE['soap_note'] = soap_note
-        
-        print(f"\nSOAP Note generated successfully")
-        print(f"Sections: {', '.join(soap_note.keys())}")
-        
-        return jsonify({
-            "success": True,
-            "soap_note": soap_note,
-            "timestamp": datetime.now().isoformat()
-        }), 200
-        
-    except Exception as e:
-        print(f"Error generating SOAP note: {str(e)}")
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+    return render_template('index.html')
 
 @app.route('/extract_entities', methods=['POST'])
 def extract_entities():
@@ -84,30 +35,51 @@ def extract_entities():
     Extract entities from SOAP note using IMO Entity Extraction API.
     
     Endpoint: POST /extract_entities
-    Input: { "soap_note": {...} }
+    Input: { "soap_note_text": "..." }
     Output: { "entities": {...}, "success": true }
     """
     try:
         data = request.get_json()
-        soap_note = data.get('soap_note', PIPELINE_STATE.get('soap_note'))
+        soap_note_text = data.get('soap_note_text', '')
         
-        if not soap_note:
+        if not soap_note_text or len(soap_note_text.strip()) == 0:
             return jsonify({
                 "success": False,
-                "error": "SOAP note is required"
+                "error": "SOAP note text is required"
             }), 400
         
         print(f"\n{'='*80}")
-        print("EXTRACTING ENTITIES FROM ASSESSMENT AND PLAN")
+        print("EXTRACTING ENTITIES FROM SOAP NOTE")
         print(f"{'='*80}\n")
         
-        # Extract entities from Assessment and Plan section
-        assessment_plan = soap_note.get('assessment', '') + '\n' + soap_note.get('plan', '')
+        print(f"Text to analyze: {len(soap_note_text)} characters")
         
-        print(f"Text to analyze: {len(assessment_plan)} characters")
+        # Store SOAP note text
+        PIPELINE_STATE['soap_note_text'] = soap_note_text
         
         # Call IMO Entity Extraction API
-        entities = nlp_processor.extract_entities(assessment_plan)
+        entities = nlp_processor.extract_entities(soap_note_text)
+        
+        # Normalize problems to get ICD-10 and SNOMED codes
+        if entities.get('problems'):
+            print(f"\nNormalizing {len(entities['problems'])} problems...")
+            entities['problems'] = nlp_processor.normalize_problems(entities['problems'])
+        
+        # Normalize procedures to get CPT and ICD-10-PCS codes
+        if entities.get('procedures'):
+            print(f"\nNormalizing {len(entities['procedures'])} procedures...")
+            entities['procedures'] = nlp_processor.normalize_procedures(entities['procedures'])
+        
+        # Normalize medications to get RxNorm codes
+        if entities.get('medications'):
+            print(f"\nNormalizing {len(entities['medications'])} medications...")
+            entities['medications'] = nlp_processor.normalize_medications(entities['medications'])
+        
+        # Normalize labs to get LOINC codes
+        if entities.get('labs'):
+            print(f"\nNormalizing {len(entities['labs'])} labs...")
+            entities['labs'] = nlp_processor.normalize_labs(entities['labs'])
+        
         PIPELINE_STATE['entities'] = entities
         
         # Count entities by category

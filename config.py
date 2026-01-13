@@ -2,11 +2,14 @@
 Configuration file for Ambient AI Solution
 Store API credentials and settings here
 """
+import os
 
 # AWS Bedrock Configuration
 aws_region = "us-east-1"  # Change to your preferred region
-aws_access_key_id = None  # Will use default AWS credentials if None
-aws_secret_access_key = None  # Will use default AWS credentials if None
+# Try to get AWS credentials from environment variables first, otherwise use None
+aws_access_key_id = os.getenv('AWS_ACCESS_KEY_ID')  # Will use default AWS credentials if None
+aws_secret_access_key = os.getenv('AWS_SECRET_ACCESS_KEY')  # Will use default AWS credentials if None
+aws_session_token = os.getenv('AWS_SESSION_TOKEN')  # Session token for temporary credentials
 bedrock_model_id = "us.amazon.nova-pro-v1:0"  # Amazon Nova Pro model
 
 # IMO Health API Credentials

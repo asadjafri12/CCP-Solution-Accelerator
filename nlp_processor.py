@@ -426,6 +426,653 @@ class NLPProcessor:
         
         return entities
     
+    def normalize_problems(self, problems: List[Dict]) -> List[Dict]:
+        """
+        Normalize problems using IMO Precision Normalize API to get ICD-10 and SNOMED codes.
+        
+        Args:
+            problems (list): List of problem entities
+            
+        Returns:
+            list: Problems with ICD-10 and SNOMED codes
+        """
+        if not problems:
+            return []
+        
+        print(f"\nNormalizing {len(problems)} problems to get ICD-10 and SNOMED codes...")
+        
+        # If no API credentials, return original problems
+        if not self.client_id or not self.client_secret:
+            print("No API credentials available")
+            return problems
+        
+        # Get OAuth access token
+        access_token = self._get_access_token()
+        if not access_token:
+            print("Could not obtain access token")
+            return problems
+        
+        normalized_problems = []
+        
+        for problem in problems:
+            try:
+                normalized_problem = self._normalize_single_problem(problem, access_token)
+                normalized_problems.append(normalized_problem)
+            except Exception as e:
+                print(f"Error normalizing problem '{problem.get('text')}': {str(e)}")
+                # Add original problem if normalization fails
+                normalized_problems.append(problem)
+        
+        return normalized_problems
+    
+    def _normalize_single_problem(self, problem: Dict, access_token: str) -> Dict:
+        """
+        Normalize a single problem using IMO Precision Normalize API.
+        Uses the IMO lexical code from entity extraction to get ICD-10 and SNOMED codes.
+        
+        Args:
+            problem (dict): Problem entity to normalize
+            access_token (str): OAuth access token
+            
+        Returns:
+            dict: Problem with IMO, ICD-10 and SNOMED codes
+        """
+        problem_text = problem.get('text', '')
+        imo_code = problem.get('code', '')  # IMO lexical code from entity extraction
+        
+        print(f"  Normalizing: '{problem_text}' (IMO: {imo_code})")
+        
+        # Start with the original problem data
+        normalized_problem = problem.copy()
+        
+        # If we don't have an IMO code, we can't normalize
+        if not imo_code:
+            print(f"    ⚠ No IMO code available, skipping normalization")
+            return normalized_problem
+        
+        try:
+            headers = {
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            # Use the IMO Precision Normalize API v1 format
+            payload = {
+                'client_request_id': f'normalize_{imo_code}',
+                'requests': [
+                    {
+                        'record_id': str(imo_code),
+                        'domain': 'Problem',
+                        'input_code': str(imo_code),
+                        'input_code_system': 'IMO'
+                    }
+                ]
+            }
+            
+            print(f"    Payload: {json.dumps(payload)}")
+            
+            response = requests.post(
+                'https://api.imohealth.com/precision/normalize/v1',
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
+            
+            print(f"    Response status: {response.status_code}")
+            
+            if response.status_code == 200:
+                result = response.json()
+                
+                # Extract ICD-10 and SNOMED codes from the response
+                icd10_code = ''
+                icd10_description = ''
+                snomed_code = ''
+                snomed_description = ''
+                
+                # Navigate the response structure
+                if 'requests' in result and len(result['requests']) > 0:
+                    request_result = result['requests'][0]
+                    
+                    if 'response' in request_result and 'items' in request_result['response']:
+                        items = request_result['response']['items']
+                        
+                        if len(items) > 0:
+                            item = items[0]  # Get the best match
+                            metadata = item.get('metadata', {})
+                            mappings = metadata.get('mappings', {})
+                            
+                            # Extract ICD-10-CM codes
+                            if 'icd10cm' in mappings:
+                                icd10_data = mappings['icd10cm'].get('codes', [])
+                                if len(icd10_data) > 0:
+                                    icd10_code = icd10_data[0].get('code', '')
+                                    icd10_description = icd10_data[0].get('title', '')
+                            
+                            # Extract SNOMED International codes
+                            if 'snomedInternational' in mappings:
+                                snomed_data = mappings['snomedInternational'].get('codes', [])
+                                if len(snomed_data) > 0:
+                                    snomed_code = snomed_data[0].get('code', '')
+                                    snomed_description = snomed_data[0].get('title', '')
+                            
+                            if icd10_code or snomed_code:
+                                print(f"    ✓ ICD-10: {icd10_code} | SNOMED: {snomed_code}")
+                            else:
+                                print(f"    ⚠ No mappings found in response")
+                        else:
+                            print(f"    ⚠ No items in response")
+                    else:
+                        print(f"    ⚠ No response data in result")
+                else:
+                    print(f"    ⚠ No requests in response")
+                
+                # Add codes to problem (preserve original IMO code)
+                normalized_problem['icd10_code'] = icd10_code
+                normalized_problem['icd10_description'] = icd10_description
+                normalized_problem['snomed_code'] = snomed_code
+                normalized_problem['snomed_description'] = snomed_description
+                
+                return normalized_problem
+            else:
+                print(f"    ✗ API Error: {response.status_code}")
+                if response.text:
+                    try:
+                        error_json = response.json()
+                        print(f"    Full error response: {json.dumps(error_json, indent=2)}")
+                        error_msg = error_json.get('error', {}).get('message', '')
+                        error_code = error_json.get('error', {}).get('details', {}).get('code', '')
+                        error_details = error_json.get('error', {}).get('details', {})
+                        print(f"    Error: {error_msg} (Code: {error_code})")
+                        print(f"    Details: {error_details}")
+                    except:
+                        print(f"    Error details: {response.text}")
+                return normalized_problem
+                
+        except Exception as e:
+            print(f"    ✗ Error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return normalized_problem
+    
+    def normalize_procedures(self, procedures: List[Dict]) -> List[Dict]:
+        """
+        Normalize procedures using IMO Precision Normalize API to get CPT and ICD-10-PCS codes.
+        
+        Args:
+            procedures (list): List of procedure entities
+            
+        Returns:
+            list: Procedures with CPT and ICD-10-PCS codes
+        """
+        if not procedures:
+            return []
+        
+        print(f"\nNormalizing {len(procedures)} procedures to get CPT and ICD-10-PCS codes...")
+        
+        # If no API credentials, return original procedures
+        if not self.client_id or not self.client_secret:
+            print("No API credentials available")
+            return procedures
+        
+        # Get OAuth access token
+        access_token = self._get_access_token()
+        if not access_token:
+            print("Could not obtain access token")
+            return procedures
+        
+        normalized_procedures = []
+        
+        for procedure in procedures:
+            try:
+                normalized_procedure = self._normalize_single_procedure(procedure, access_token)
+                normalized_procedures.append(normalized_procedure)
+            except Exception as e:
+                print(f"Error normalizing procedure '{procedure.get('text')}': {str(e)}")
+                # Add original procedure if normalization fails
+                normalized_procedures.append(procedure)
+        
+        return normalized_procedures
+    
+    def _normalize_single_procedure(self, procedure: Dict, access_token: str) -> Dict:
+        """
+        Normalize a single procedure using IMO Precision Normalize API.
+        Uses the IMO lexical code from entity extraction to get CPT and ICD-10-PCS codes.
+        
+        Args:
+            procedure (dict): Procedure entity to normalize
+            access_token (str): OAuth access token
+            
+        Returns:
+            dict: Procedure with IMO, CPT and ICD-10-PCS codes
+        """
+        procedure_text = procedure.get('text', '')
+        imo_code = procedure.get('code', '')  # IMO lexical code from entity extraction
+        
+        print(f"  Normalizing: '{procedure_text}' (IMO: {imo_code})")
+        
+        # Start with the original procedure data
+        normalized_procedure = procedure.copy()
+        
+        # If we don't have an IMO code, we can't normalize
+        if not imo_code:
+            print(f"    ⚠ No IMO code available, skipping normalization")
+            return normalized_procedure
+        
+        try:
+            headers = {
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            # Use the IMO Precision Normalize API v1 format
+            payload = {
+                'client_request_id': f'normalize_proc_{imo_code}',
+                'requests': [
+                    {
+                        'record_id': str(imo_code),
+                        'domain': 'Procedure',
+                        'input_code': str(imo_code),
+                        'input_code_system': 'IMO'
+                    }
+                ]
+            }
+            
+            print(f"    Payload: {json.dumps(payload)}")
+            
+            response = requests.post(
+                'https://api.imohealth.com/precision/normalize/v1',
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
+            
+            print(f"    Response status: {response.status_code}")
+            
+            if response.status_code == 200:
+                result = response.json()
+                print(f"    Full response: {json.dumps(result, indent=2)}")
+                
+                # Extract CPT and ICD-10-PCS codes from the response
+                cpt_code = ''
+                cpt_description = ''
+                icd10pcs_code = ''
+                icd10pcs_description = ''
+                
+                # Navigate the response structure
+                if 'requests' in result and len(result['requests']) > 0:
+                    request_result = result['requests'][0]
+                    
+                    if 'response' in request_result and 'items' in request_result['response']:
+                        items = request_result['response']['items']
+                        
+                        if len(items) > 0:
+                            item = items[0]  # Get the best match
+                            metadata = item.get('metadata', {})
+                            mappings = metadata.get('mappings', {})
+                            
+                            # Extract CPT codes
+                            if 'cpt' in mappings:
+                                cpt_data = mappings['cpt'].get('codes', [])
+                                if len(cpt_data) > 0:
+                                    cpt_code = cpt_data[0].get('code', '')
+                                    cpt_description = cpt_data[0].get('title', '')
+                            
+                            # Extract ICD-10-PCS codes
+                            if 'icd10pcs' in mappings:
+                                icd10pcs_data = mappings['icd10pcs'].get('codes', [])
+                                if len(icd10pcs_data) > 0:
+                                    icd10pcs_code = icd10pcs_data[0].get('code', '')
+                                    icd10pcs_description = icd10pcs_data[0].get('title', '')
+                            
+                            if cpt_code or icd10pcs_code:
+                                print(f"    ✓ CPT: {cpt_code} | ICD-10-PCS: {icd10pcs_code}")
+                            else:
+                                print(f"    ⚠ No mappings found in response")
+                        else:
+                            print(f"    ⚠ No items in response")
+                    else:
+                        print(f"    ⚠ No response data in result")
+                else:
+                    print(f"    ⚠ No requests in response")
+                
+                # Add codes to procedure (preserve original IMO code)
+                normalized_procedure['cpt_code'] = cpt_code
+                normalized_procedure['cpt_description'] = cpt_description
+                normalized_procedure['icd10pcs_code'] = icd10pcs_code
+                normalized_procedure['icd10pcs_description'] = icd10pcs_description
+                
+                return normalized_procedure
+            else:
+                print(f"    ✗ API Error: {response.status_code}")
+                if response.text:
+                    try:
+                        error_json = response.json()
+                        error_msg = error_json.get('error', {}).get('message', '')
+                        error_code = error_json.get('error', {}).get('details', {}).get('code', '')
+                        print(f"    Error: {error_msg} (Code: {error_code})")
+                    except:
+                        print(f"    Error details: {response.text[:300]}")
+                return normalized_procedure
+                
+        except Exception as e:
+            print(f"    ✗ Error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return normalized_procedure
+    
+    def normalize_medications(self, medications: List[Dict]) -> List[Dict]:
+        """
+        Normalize medications using IMO Precision Normalize API to get RxNorm codes.
+        
+        Args:
+            medications (list): List of medication entities
+            
+        Returns:
+            list: Medications with RxNorm codes
+        """
+        if not medications:
+            return []
+        
+        print(f"\nNormalizing {len(medications)} medications to get RxNorm codes...")
+        
+        # If no API credentials, return original medications
+        if not self.client_id or not self.client_secret:
+            print("No API credentials available")
+            return medications
+        
+        # Get OAuth access token
+        access_token = self._get_access_token()
+        if not access_token:
+            print("Could not obtain access token")
+            return medications
+        
+        normalized_medications = []
+        
+        for medication in medications:
+            try:
+                normalized_medication = self._normalize_single_medication(medication, access_token)
+                normalized_medications.append(normalized_medication)
+            except Exception as e:
+                print(f"Error normalizing medication '{medication.get('text')}': {str(e)}")
+                # Add original medication if normalization fails
+                normalized_medications.append(medication)
+        
+        return normalized_medications
+    
+    def _normalize_single_medication(self, medication: Dict, access_token: str) -> Dict:
+        """
+        Normalize a single medication using IMO Precision Normalize API.
+        Uses the IMO lexical code from entity extraction to get RxNorm codes.
+        
+        Args:
+            medication (dict): Medication entity to normalize
+            access_token (str): OAuth access token
+            
+        Returns:
+            dict: Medication with IMO and RxNorm codes
+        """
+        medication_text = medication.get('text', '')
+        imo_code = medication.get('code', '')  # IMO lexical code from entity extraction
+        
+        print(f"  Normalizing: '{medication_text}' (IMO: {imo_code})")
+        
+        # Start with the original medication data
+        normalized_medication = medication.copy()
+        
+        # If we don't have an IMO code, we can't normalize
+        if not imo_code:
+            print(f"    ⚠ No IMO code available, skipping normalization")
+            return normalized_medication
+        
+        try:
+            headers = {
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            # Use the IMO Precision Normalize API v1 format
+            payload = {
+                'client_request_id': f'normalize_med_{imo_code}',
+                'requests': [
+                    {
+                        'record_id': str(imo_code),
+                        'domain': 'Medication',
+                        'input_code': str(imo_code),
+                        'input_code_system': 'IMO'
+                    }
+                ]
+            }
+            
+            print(f"    Payload: {json.dumps(payload)}")
+            
+            response = requests.post(
+                'https://api.imohealth.com/precision/normalize/v1',
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
+            
+            print(f"    Response status: {response.status_code}")
+            
+            if response.status_code == 200:
+                result = response.json()
+                print(f"    Full response: {json.dumps(result, indent=2)}")
+                
+                # Extract RxNorm codes from the response
+                rxnorm_code = ''
+                rxnorm_description = ''
+                
+                # Navigate the response structure
+                if 'requests' in result and len(result['requests']) > 0:
+                    request_result = result['requests'][0]
+                    
+                    if 'response' in request_result and 'items' in request_result['response']:
+                        items = request_result['response']['items']
+                        
+                        if len(items) > 0:
+                            item = items[0]  # Get the best match
+                            metadata = item.get('metadata', {})
+                            mappings = metadata.get('mappings', {})
+                            
+                            # Extract RxNorm codes
+                            if 'rxnorm' in mappings:
+                                rxnorm_data = mappings['rxnorm'].get('codes', [])
+                                if len(rxnorm_data) > 0:
+                                    # RxNorm uses different field names: rxnorm_code and rxnorm_titles
+                                    rxnorm_code = rxnorm_data[0].get('rxnorm_code', '')
+                                    rxnorm_titles = rxnorm_data[0].get('rxnorm_titles', [])
+                                    if len(rxnorm_titles) > 0:
+                                        rxnorm_description = rxnorm_titles[0].get('title', '')
+                            
+                            if rxnorm_code:
+                                print(f"    ✓ RxNorm: {rxnorm_code}")
+                            else:
+                                print(f"    ⚠ No RxNorm mapping found in response")
+                        else:
+                            print(f"    ⚠ No items in response")
+                    else:
+                        print(f"    ⚠ No response data in result")
+                else:
+                    print(f"    ⚠ No requests in response")
+                
+                # Add codes to medication (preserve original IMO code)
+                normalized_medication['rxnorm_code'] = rxnorm_code
+                normalized_medication['rxnorm_description'] = rxnorm_description
+                
+                return normalized_medication
+            else:
+                print(f"    ✗ API Error: {response.status_code}")
+                if response.text:
+                    try:
+                        error_json = response.json()
+                        error_msg = error_json.get('error', {}).get('message', '')
+                        error_code = error_json.get('error', {}).get('details', {}).get('code', '')
+                        print(f"    Error: {error_msg} (Code: {error_code})")
+                    except:
+                        print(f"    Error details: {response.text[:300]}")
+                return normalized_medication
+                
+        except Exception as e:
+            print(f"    ✗ Error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return normalized_medication
+    
+    def normalize_labs(self, labs: List[Dict]) -> List[Dict]:
+        """
+        Normalize labs using IMO Precision Normalize API to get LOINC codes.
+        
+        Args:
+            labs (list): List of lab entities
+            
+        Returns:
+            list: Labs with LOINC codes
+        """
+        if not labs:
+            return []
+        
+        print(f"\nNormalizing {len(labs)} labs to get LOINC codes...")
+        
+        # If no API credentials, return original labs
+        if not self.client_id or not self.client_secret:
+            print("No API credentials available")
+            return labs
+        
+        # Get OAuth access token
+        access_token = self._get_access_token()
+        if not access_token:
+            print("Could not obtain access token")
+            return labs
+        
+        normalized_labs = []
+        
+        for lab in labs:
+            try:
+                normalized_lab = self._normalize_single_lab(lab, access_token)
+                normalized_labs.append(normalized_lab)
+            except Exception as e:
+                print(f"Error normalizing lab '{lab.get('text')}': {str(e)}")
+                # Add original lab if normalization fails
+                normalized_labs.append(lab)
+        
+        return normalized_labs
+    
+    def _normalize_single_lab(self, lab: Dict, access_token: str) -> Dict:
+        """
+        Normalize a single lab using IMO Precision Normalize API.
+        Uses the IMO lexical code from entity extraction to get LOINC codes.
+        
+        Args:
+            lab (dict): Lab entity to normalize
+            access_token (str): OAuth access token
+            
+        Returns:
+            dict: Lab with IMO and LOINC codes
+        """
+        lab_text = lab.get('text', '')
+        imo_code = lab.get('code', '')  # IMO lexical code from entity extraction
+        
+        print(f"  Normalizing: '{lab_text}' (IMO: {imo_code})")
+        
+        # Start with the original lab data
+        normalized_lab = lab.copy()
+        
+        # If we don't have an IMO code, we can't normalize
+        if not imo_code:
+            print(f"    ⚠ No IMO code available, skipping normalization")
+            return normalized_lab
+        
+        try:
+            headers = {
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            # Use the IMO Precision Normalize API v1 format
+            payload = {
+                'client_request_id': f'normalize_lab_{imo_code}',
+                'requests': [
+                    {
+                        'record_id': str(imo_code),
+                        'domain': 'Lab',
+                        'input_code': str(imo_code),
+                        'input_code_system': 'IMO'
+                    }
+                ]
+            }
+            
+            print(f"    Payload: {json.dumps(payload)}")
+            
+            response = requests.post(
+                'https://api.imohealth.com/precision/normalize/v1',
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
+            
+            print(f"    Response status: {response.status_code}")
+            
+            if response.status_code == 200:
+                result = response.json()
+                print(f"    Full response: {json.dumps(result, indent=2)}")
+                
+                # Extract LOINC codes from the response
+                loinc_code = ''
+                loinc_description = ''
+                
+                # Navigate the response structure
+                if 'requests' in result and len(result['requests']) > 0:
+                    request_result = result['requests'][0]
+                    
+                    if 'response' in request_result and 'items' in request_result['response']:
+                        items = request_result['response']['items']
+                        
+                        if len(items) > 0:
+                            item = items[0]  # Get the best match
+                            metadata = item.get('metadata', {})
+                            mappings = metadata.get('mappings', {})
+                            
+                            # Extract LOINC codes
+                            if 'loinc' in mappings:
+                                loinc_data = mappings['loinc'].get('codes', [])
+                                if len(loinc_data) > 0:
+                                    loinc_code = loinc_data[0].get('code', '')
+                                    loinc_description = loinc_data[0].get('title', '')
+                            
+                            if loinc_code:
+                                print(f"    ✓ LOINC: {loinc_code}")
+                            else:
+                                print(f"    ⚠ No LOINC mapping found in response")
+                        else:
+                            print(f"    ⚠ No items in response")
+                    else:
+                        print(f"    ⚠ No response data in result")
+                else:
+                    print(f"    ⚠ No requests in response")
+                
+                # Add codes to lab (preserve original IMO code)
+                normalized_lab['loinc_code'] = loinc_code
+                normalized_lab['loinc_description'] = loinc_description
+                
+                return normalized_lab
+            else:
+                print(f"    ✗ API Error: {response.status_code}")
+                if response.text:
+                    try:
+                        error_json = response.json()
+                        error_msg = error_json.get('error', {}).get('message', '')
+                        error_code = error_json.get('error', {}).get('details', {}).get('code', '')
+                        print(f"    Error: {error_msg} (Code: {error_code})")
+                    except:
+                        print(f"    Error details: {response.text[:300]}")
+                return normalized_lab
+                
+        except Exception as e:
+            print(f"    ✗ Error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return normalized_lab
+    
     def normalize_entities(self, entities: Dict[str, List[Dict]]) -> Dict[str, List[Dict]]:
         """
         Normalize entities using IMO Precision Normalize API.
